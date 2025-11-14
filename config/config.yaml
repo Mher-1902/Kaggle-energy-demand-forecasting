@@ -1,0 +1,5 @@
+data:
+  raw_path: '/home/rog/Documents/Energy-demand-forecasting/data/raw/PJME_hourly.csv'
+  target_col: "PJME_MW"
+  valid_days: 60
+  test_days: 60

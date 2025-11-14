@@ -1,0 +1,27 @@
+name: ts-energy-forecasting
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.11
+
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - statsmodels
+  - jupyter
+  - ipykernel
+  - pip
+
+  - xgboost
+
+  - pip:
+      - tensorflow
+      - keras
+      - prophet
+      - holidays
+      - tqdm
