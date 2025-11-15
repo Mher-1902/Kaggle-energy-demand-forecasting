@@ -1,12 +1,3 @@
-"""
-RNN (LSTM) model for PJME energy demand forecasting.
-
-Uses:
-  - utils.data_loader.EnergyConsumptionDataLoader
-  - simple sliding-window supervised transformation
-  - single-step forecast
-"""
-
 from pathlib import Path
 import sys
 
@@ -27,18 +18,13 @@ def make_supervised(
     y: np.ndarray,
     window: int = 24,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Turn a 1D array into (X, y) where:
-      X[i] = y[i : i+window]
-      y[i] = y[i+window]
-    """
+    
     X, target = [], []
     for i in range(len(y) - window):
         X.append(y[i : i + window])
         target.append(y[i + window])
     X = np.array(X)
     target = np.array(target)
-    # shape: (samples, timesteps, features=1)
     return X[..., np.newaxis], target
 
 
@@ -66,9 +52,7 @@ def main(
     window: int = 24,
     results_path: str | Path = "results/rnn_results.csv",
 ):
-    # -------------------------------------------------------------------------
-    # 1. Load data
-    # -------------------------------------------------------------------------
+    
     if processed_path is None:
         processed_path = project_root / "data" / "processed" / "pjme_cuped.csv"
 
@@ -85,7 +69,6 @@ def main(
     print("Valid length:", len(valid))
     print("Test length:", len(test))
 
-    # Use train + valid for fitting, test for evaluation
     y_train = train
     y_valid = valid
     y_test = test
@@ -93,24 +76,16 @@ def main(
     y_train_valid = np.concatenate([y_train.values, y_valid.values])
     y_test_arr = y_test.values
 
-    # -------------------------------------------------------------------------
-    # 2. Build supervised datasets
-    # -------------------------------------------------------------------------
     X_train, y_train_sup = make_supervised(y_train_valid, window=window)
 
-    # For test: we need sliding windows that continue right after train+valid
     y_all = np.concatenate([y_train_valid, y_test_arr])
     X_all, y_all_sup = make_supervised(y_all, window=window)
 
-    # The last len(y_test) samples of y_all_sup correspond roughly to test horizon,
-    # but since we are using sliding windows, we align by index:
     n_train_sup = len(y_train_sup)
     X_test = X_all[n_train_sup:]
     y_test_sup = y_all_sup[n_train_sup:]
 
-    # -------------------------------------------------------------------------
-    # 3. Build and train model
-    # -------------------------------------------------------------------------
+
     model = build_lstm_model(window=window)
     model.summary()
 
@@ -129,9 +104,7 @@ def main(
         callbacks=[es],
     )
 
-    # -------------------------------------------------------------------------
-    # 4. Predict & evaluate
-    # -------------------------------------------------------------------------
+
     y_pred_test = model.predict(X_test).flatten()
 
     metrics = evaluate_forecast(y_test_sup, y_pred_test)
@@ -140,9 +113,6 @@ def main(
     print(f"  MAE  = {metrics['mae']:.3f}")
     print(f"  RMSE = {metrics['rmse']:.3f}")
 
-    # -------------------------------------------------------------------------
-    # 5. Save results
-    # -------------------------------------------------------------------------
     results_path = Path(results_path)
     results_path.parent.mkdir(parents=True, exist_ok=True)
 

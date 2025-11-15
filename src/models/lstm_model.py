@@ -1,15 +1,3 @@
-"""
-LSTM time series forecaster for PJME energy consumption.
-
-- Input:  last 3 weeks (504 hours)
-- Output: next 1 week (168 hours)
-- Uses stride to reduce number of training samples
-- OOP-style class: LSTMForecaster
-
-Place this file in e.g.:
-    src/models/lstm_model.py
-"""
-
 from pathlib import Path
 import sys
 from typing import Tuple, Optional
@@ -24,7 +12,6 @@ import tensorflow as tf
 from tensorflow.keras import layers, models
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
-# Make sure project root is on the path so we can import utils.data_loader
 project_root = Path("..").resolve()
 sys.path.append(str(project_root))
 
@@ -32,13 +19,7 @@ from utils.data_loader import EnergyConsumptionDataLoader
 
 
 class LSTMForecaster:
-    """
-    LSTM forecaster for univariate time series (PJME_MW).
 
-    - input_weeks:  history length in weeks (3 => 3 * 168 = 504 hours)
-    - output_weeks: forecast horizon in weeks (1 => 168 hours)
-    - stride:       window step in hours (3 means we take every 3rd hour as a new window)
-    """
 
     def __init__(
         self,
@@ -78,7 +59,6 @@ class LSTMForecaster:
         self.model: Optional[tf.keras.Model] = None
         self.history = None
 
-        # For debugging / inspection
         self.X_train = None
         self.Y_train = None
         self.X_valid = None
@@ -86,9 +66,6 @@ class LSTMForecaster:
 
         tf.random.set_seed(random_seed)
 
-    # -----------------------------
-    # Internal helpers
-    # -----------------------------
 
     def _create_inout_sequences(
         self,
@@ -97,14 +74,7 @@ class LSTMForecaster:
         output_window: int,
         stride: int,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Convert a scaled series into (X, y) windows.
-
-        series_2d: shape (N, n_features). Here n_features = 1 (just PJME_MW).
-        Returns:
-            X: (num_samples, input_window, n_features)
-            y: (num_samples, output_window)
-        """
+        
         X, y = [], []
         N = len(series_2d)
 
@@ -112,8 +82,8 @@ class LSTMForecaster:
             end_input = start + input_window
             end_output = end_input + output_window
 
-            X_seq = series_2d[start:end_input]           # (input_window, 1)
-            y_seq = series_2d[end_input:end_output, 0]   # (output_window,)
+            X_seq = series_2d[start:end_input]         
+            y_seq = series_2d[end_input:end_output, 0]   
 
             X.append(X_seq)
             y.append(y_seq)
@@ -123,13 +93,11 @@ class LSTMForecaster:
         return X, y
 
     def _build_model(self, n_features: int) -> tf.keras.Model:
-        """
-        Build the LSTM model.
-        """
+
         model = models.Sequential()
         model.add(layers.Input(shape=(self.input_window, n_features)))
 
-        # First LSTM layer
+
         model.add(
             layers.LSTM(
                 self.lstm_units,
@@ -138,9 +106,9 @@ class LSTMForecaster:
             )
         )
 
-        # Additional LSTM layers if num_lstm_layers > 1
+
         for i in range(1, self.num_lstm_layers):
-            # On the last LSTM layer we don't return sequences
+
             return_sequences = (i < self.num_lstm_layers - 1)
             model.add(
                 layers.LSTM(
@@ -150,10 +118,9 @@ class LSTMForecaster:
                 )
             )
 
-        # Dropout + Dense layers
         model.add(layers.Dropout(self.dropout))
         model.add(layers.Dense(self.lstm_units, activation="relu"))
-        model.add(layers.Dense(self.output_window))  # 168 outputs: next 168 hours
+        model.add(layers.Dense(self.output_window)) 
 
         optimizer = tf.keras.optimizers.Adam(
             learning_rate=self.learning_rate,
@@ -163,28 +130,21 @@ class LSTMForecaster:
         model.compile(optimizer=optimizer, loss="mse")
         return model
 
-    # -----------------------------
-    # Public API
-    # -----------------------------
+
 
     def prepare_data(
         self,
         train_series: pd.Series,
         valid_series: pd.Series,
     ) -> None:
-        """
-        Scale train/valid and create (X, y) windows.
-        """
-        # Convert to 2D arrays (N, 1)
+        
         y_train = train_series.values.astype("float32").reshape(-1, 1)
         y_valid = valid_series.values.astype("float32").reshape(-1, 1)
 
-        # Fit scaler on train only
         self.scaler_y = StandardScaler()
         y_train_scaled = self.scaler_y.fit_transform(y_train)
         y_valid_scaled = self.scaler_y.transform(y_valid)
 
-        # Create windows
         X_train, Y_train = self._create_inout_sequences(
             y_train_scaled,
             input_window=self.input_window,
@@ -211,23 +171,14 @@ class LSTMForecaster:
         train_series: pd.Series,
         valid_series: pd.Series,
     ) -> None:
-        """
-        Full training pipeline:
-        - scale data
-        - create windows
-        - build model
-        - train with early stopping
-        """
-        # 1. Prepare data
+        
         self.prepare_data(train_series, valid_series)
 
-        n_features = self.X_train.shape[2]  # should be 1 for univariate
+        n_features = self.X_train.shape[2] 
 
-        # 2. Build model
         self.model = self._build_model(n_features)
         self.model.summary()
 
-        # 3. Callbacks for overfitting control
         early_stop = EarlyStopping(
             monitor="val_loss",
             patience=7,
@@ -241,7 +192,7 @@ class LSTMForecaster:
             min_lr=1e-5,
         )
 
-        # 4. Train
+
         self.history = self.model.fit(
             self.X_train,
             self.Y_train,
@@ -253,9 +204,7 @@ class LSTMForecaster:
         )
 
     def plot_loss(self) -> None:
-        """
-        Plot train vs validation loss to inspect overfitting.
-        """
+
         if self.history is None:
             print("No training history found. Train the model first.")
             return
@@ -278,14 +227,7 @@ class LSTMForecaster:
         self,
         series: pd.Series,
     ) -> np.ndarray:
-        """
-        Take the LAST `input_window` hours from the given series,
-        and predict the NEXT `output_window` hours (1 week).
-
-        Returns:
-            y_pred_inverse: np.ndarray of shape (output_window,)
-            in original PJME_MW scale.
-        """
+        
         if self.model is None or self.scaler_y is None:
             raise RuntimeError("Model is not trained. Call fit() first.")
 
@@ -297,20 +239,15 @@ class LSTMForecaster:
                 f"got {len(values)}."
             )
 
-        # Take last input_window as context
-        context = values[-self.input_window:]  # (input_window, 1)
+        context = values[-self.input_window:] 
 
-        # Scale using the same scaler
         context_scaled = self.scaler_y.transform(context)
 
-        # Model expects shape (1, input_window, n_features)
-        X_input = context_scaled[np.newaxis, :, :]  # (1, input_window, 1)
+        X_input = context_scaled[np.newaxis, :, :]  
 
         y_pred_scaled = self.model.predict(X_input)
-        # y_pred_scaled shape: (1, output_window)
-        y_pred_scaled = y_pred_scaled.reshape(-1, 1)  # (output_window, 1)
+        y_pred_scaled = y_pred_scaled.reshape(-1, 1)  
 
-        # Inverse transform back to MW
         y_pred_inverse = self.scaler_y.inverse_transform(y_pred_scaled).flatten()
         return y_pred_inverse
 
@@ -319,19 +256,11 @@ class LSTMForecaster:
         series: pd.Series,
         label_prefix: str = "Valid",
     ) -> None:
-        """
-        Plot last week of true data vs next week forecast.
-
-        We:
-        - use the last input_window points as context
-        - plot:
-            - the last output_window hours of the context (true past week)
-            - the predicted next output_window hours
-        """
+        
         y_pred = self.predict_next_week_from_series(series)
 
         context_values = series.values.astype("float32")
-        past_week_true = context_values[-self.output_window:]  # last real week
+        past_week_true = context_values[-self.output_window:]  
 
         plt.figure(figsize=(10, 5))
         plt.plot(
@@ -353,12 +282,9 @@ class LSTMForecaster:
         plt.show()
 
 
-# ---------------------------------------------------------
-# Example script usage
-# ---------------------------------------------------------
+
 
 def main():
-    # 1. Load data
     loader = EnergyConsumptionDataLoader(use_cuped=False)
     df = loader.load_data()
     train, valid, test = loader.train_valid_test_split()
@@ -369,7 +295,6 @@ def main():
     print("Train head:")
     print(train.head())
 
-    # 2. Create forecaster
     forecaster = LSTMForecaster(
         input_weeks=3,
         output_weeks=1,
@@ -384,13 +309,10 @@ def main():
         clipnorm=1.0,
     )
 
-    # 3. Train on train, validate on valid
     forecaster.fit(train_series=train, valid_series=valid)
 
-    # 4. Plot train vs validation loss
     forecaster.plot_loss()
 
-    # 5. Example: forecast next week from end of validation segment
     forecaster.plot_next_week_forecast(valid, label_prefix="Valid")
 
 

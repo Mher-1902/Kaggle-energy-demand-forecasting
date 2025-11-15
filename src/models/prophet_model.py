@@ -1,13 +1,3 @@
-"""
-Prophet model for PJME energy demand forecasting.
-
-Uses:
-  - utils.data_loader.EnergyConsumptionDataLoader
-  - train/valid/test split
-  - CUPED toggle via loader(use_cuped=...)
-  - MAE / RMSE evaluation
-"""
-
 from pathlib import Path
 import sys
 
@@ -18,20 +8,11 @@ from prophet import Prophet
 project_root = Path(__file__).resolve().parents[1]
 sys.path.append(str(project_root))
 
-from utils.data_loader import EnergyConsumptionDataLoader  # noqa: E402
+from utils.data_loader import EnergyConsumptionDataLoader  
 
 
 def make_prophet_df(y: pd.Series) -> pd.DataFrame:
-    """
-    Convert a time-indexed Series to Prophet format.
 
-    Input:
-      index -> datetime
-      values -> target (PJME_MW or CUPED target)
-
-    Output columns:
-      ds, y
-    """
     df = y.reset_index()
     df.columns = ["ds", "y"]
     return df
@@ -48,9 +29,7 @@ def main(
     processed_path: str | None = None,
     results_path: str | Path = "results/prophet_results.csv",
 ):
-    # -------------------------------------------------------------------------
-    # 1. Load data
-    # -------------------------------------------------------------------------
+
     if processed_path is None:
         processed_path = project_root / "data" / "processed" / "pjme_cuped.csv"
 
@@ -67,10 +46,6 @@ def main(
     print("Valid length:", len(valid))
     print("Test length:", len(test))
 
-    # -------------------------------------------------------------------------
-    # 2. Prepare Prophet training data (train + valid)
-    #    We train on train+valid, then evaluate on test.
-    # -------------------------------------------------------------------------
     y_train = train
     y_valid = valid
     y_test = test
@@ -79,9 +54,6 @@ def main(
     train_valid_df = make_prophet_df(y_train_valid)
     test_df = make_prophet_df(y_test)
 
-    # -------------------------------------------------------------------------
-    # 3. Fit Prophet
-    # -------------------------------------------------------------------------
     m = Prophet(
         yearly_seasonality=True,
         weekly_seasonality=True,
@@ -90,34 +62,24 @@ def main(
     )
     m.fit(train_valid_df)
 
-    # -------------------------------------------------------------------------
-    # 4. Build future dataframe for the test horizon
-    # -------------------------------------------------------------------------
     n_test = len(y_test)
     future = m.make_future_dataframe(
         periods=n_test,
-        freq="H",  # PJME is hourly
+        freq="H", 
         include_history=True,
     )
 
     forecast = m.predict(future)
 
-    # Match forecast to test index only
     forecast_test = forecast.set_index("ds").loc[test_df["ds"]]
     y_pred_test = forecast_test["yhat"]
 
-    # -------------------------------------------------------------------------
-    # 5. Evaluate
-    # -------------------------------------------------------------------------
     metrics = evaluate_forecast(y_test.values, y_pred_test.values)
 
     print("Prophet on test set:")
     print(f"  MAE  = {metrics['mae']:.3f}")
     print(f"  RMSE = {metrics['rmse']:.3f}")
 
-    # -------------------------------------------------------------------------
-    # 6. Save results
-    # -------------------------------------------------------------------------
     results_path = Path(results_path)
     results_path.parent.mkdir(parents=True, exist_ok=True)
 
