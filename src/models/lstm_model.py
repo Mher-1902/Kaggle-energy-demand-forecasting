@@ -12,15 +12,26 @@ import tensorflow as tf
 from tensorflow.keras import layers, models
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
-project_root = Path("..").resolve()
-sys.path.append(str(project_root))
+import mlflow
+import mlflow.tensorflow
 
-from utils.data_loader import EnergyConsumptionDataLoader
+# MLflow setup
+mlflow.set_experiment("energy_forecasting_lstm")
+mlflow.tensorflow.autolog()
+
+# Paths
+project_root = Path(__file__).resolve().parents[2]
+sys.path.append(str(project_root / "src"))
+
+results_models_dir = project_root / "results" / "models"
+results_figures_dir = project_root / "results" / "figures"
+results_models_dir.mkdir(parents=True, exist_ok=True)
+results_figures_dir.mkdir(parents=True, exist_ok=True)
+
+from utils.data_loader import EnergyConsumptionDataLoader  # noqa: E402
 
 
 class LSTMForecaster:
-
-
     def __init__(
         self,
         input_weeks: int = 3,
@@ -66,7 +77,6 @@ class LSTMForecaster:
 
         tf.random.set_seed(random_seed)
 
-
     def _create_inout_sequences(
         self,
         series_2d: np.ndarray,
@@ -74,7 +84,6 @@ class LSTMForecaster:
         output_window: int,
         stride: int,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        
         X, y = [], []
         N = len(series_2d)
 
@@ -82,8 +91,8 @@ class LSTMForecaster:
             end_input = start + input_window
             end_output = end_input + output_window
 
-            X_seq = series_2d[start:end_input]         
-            y_seq = series_2d[end_input:end_output, 0]   
+            X_seq = series_2d[start:end_input]
+            y_seq = series_2d[end_input:end_output, 0]
 
             X.append(X_seq)
             y.append(y_seq)
@@ -93,10 +102,8 @@ class LSTMForecaster:
         return X, y
 
     def _build_model(self, n_features: int) -> tf.keras.Model:
-
         model = models.Sequential()
         model.add(layers.Input(shape=(self.input_window, n_features)))
-
 
         model.add(
             layers.LSTM(
@@ -106,9 +113,7 @@ class LSTMForecaster:
             )
         )
 
-
         for i in range(1, self.num_lstm_layers):
-
             return_sequences = (i < self.num_lstm_layers - 1)
             model.add(
                 layers.LSTM(
@@ -120,7 +125,7 @@ class LSTMForecaster:
 
         model.add(layers.Dropout(self.dropout))
         model.add(layers.Dense(self.lstm_units, activation="relu"))
-        model.add(layers.Dense(self.output_window)) 
+        model.add(layers.Dense(self.output_window))
 
         optimizer = tf.keras.optimizers.Adam(
             learning_rate=self.learning_rate,
@@ -130,14 +135,11 @@ class LSTMForecaster:
         model.compile(optimizer=optimizer, loss="mse")
         return model
 
-
-
     def prepare_data(
         self,
         train_series: pd.Series,
         valid_series: pd.Series,
     ) -> None:
-        
         y_train = train_series.values.astype("float32").reshape(-1, 1)
         y_valid = valid_series.values.astype("float32").reshape(-1, 1)
 
@@ -171,10 +173,9 @@ class LSTMForecaster:
         train_series: pd.Series,
         valid_series: pd.Series,
     ) -> None:
-        
         self.prepare_data(train_series, valid_series)
 
-        n_features = self.X_train.shape[2] 
+        n_features = self.X_train.shape[2]
 
         self.model = self._build_model(n_features)
         self.model.summary()
@@ -192,7 +193,6 @@ class LSTMForecaster:
             min_lr=1e-5,
         )
 
-
         self.history = self.model.fit(
             self.X_train,
             self.Y_train,
@@ -203,11 +203,10 @@ class LSTMForecaster:
             verbose=1,
         )
 
-    def plot_loss(self) -> None:
-
+    def plot_loss(self) -> Path:
         if self.history is None:
             print("No training history found. Train the model first.")
-            return
+            return None
 
         train_loss = self.history.history["loss"]
         val_loss = self.history.history["val_loss"]
@@ -221,13 +220,17 @@ class LSTMForecaster:
         plt.title("LSTM: Train vs Validation Loss")
         plt.legend()
         plt.grid(True)
-        plt.show()
+
+        out = results_figures_dir / "lstm_loss.png"
+        plt.tight_layout()
+        plt.savefig(out, dpi=150)
+        plt.close()
+        return out
 
     def predict_next_week_from_series(
         self,
         series: pd.Series,
     ) -> np.ndarray:
-        
         if self.model is None or self.scaler_y is None:
             raise RuntimeError("Model is not trained. Call fit() first.")
 
@@ -239,14 +242,14 @@ class LSTMForecaster:
                 f"got {len(values)}."
             )
 
-        context = values[-self.input_window:] 
+        context = values[-self.input_window:]
 
         context_scaled = self.scaler_y.transform(context)
 
-        X_input = context_scaled[np.newaxis, :, :]  
+        X_input = context_scaled[np.newaxis, :, :]
 
         y_pred_scaled = self.model.predict(X_input)
-        y_pred_scaled = y_pred_scaled.reshape(-1, 1)  
+        y_pred_scaled = y_pred_scaled.reshape(-1, 1)
 
         y_pred_inverse = self.scaler_y.inverse_transform(y_pred_scaled).flatten()
         return y_pred_inverse
@@ -255,12 +258,11 @@ class LSTMForecaster:
         self,
         series: pd.Series,
         label_prefix: str = "Valid",
-    ) -> None:
-        
+    ) -> Path:
         y_pred = self.predict_next_week_from_series(series)
 
         context_values = series.values.astype("float32")
-        past_week_true = context_values[-self.output_window:]  
+        past_week_true = context_values[-self.output_window:]
 
         plt.figure(figsize=(10, 5))
         plt.plot(
@@ -279,9 +281,12 @@ class LSTMForecaster:
         plt.title("LSTM Forecast: Last Week vs Next Week")
         plt.legend()
         plt.grid(True)
-        plt.show()
 
-
+        out = results_figures_dir / "lstm_next_week_forecast.png"
+        plt.tight_layout()
+        plt.savefig(out, dpi=150)
+        plt.close()
+        return out
 
 
 def main():
@@ -309,11 +314,35 @@ def main():
         clipnorm=1.0,
     )
 
-    forecaster.fit(train_series=train, valid_series=valid)
+    params = {
+        "input_weeks": forecaster.input_weeks,
+        "output_weeks": forecaster.output_weeks,
+        "stride": forecaster.stride,
+        "lstm_units": forecaster.lstm_units,
+        "num_lstm_layers": forecaster.num_lstm_layers,
+        "dropout": forecaster.dropout,
+        "recurrent_dropout": forecaster.recurrent_dropout,
+        "batch_size": forecaster.batch_size,
+        "epochs": forecaster.epochs,
+        "learning_rate": forecaster.learning_rate,
+        "clipnorm": forecaster.clipnorm,
+    }
 
-    forecaster.plot_loss()
+    with mlflow.start_run(run_name="lstm_baseline"):
+        mlflow.log_params(params)
 
-    forecaster.plot_next_week_forecast(valid, label_prefix="Valid")
+        forecaster.fit(train_series=train, valid_series=valid)
+
+        loss_path = forecaster.plot_loss()
+        forecast_path = forecaster.plot_next_week_forecast(valid, label_prefix="Valid")
+
+        if loss_path is not None:
+            mlflow.log_artifact(str(loss_path), artifact_path="figures")
+        if forecast_path is not None:
+            mlflow.log_artifact(str(forecast_path), artifact_path="figures")
+
+        model_save_path = results_models_dir / "lstm_model"
+        forecaster.model.save(model_save_path)
 
 
 if __name__ == "__main__":

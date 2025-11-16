@@ -130,6 +130,19 @@ Handles non-linear behaviours, peaks, drops, and long seasonal structure extreme
 
 ---
 
+### 🔍 MLflow Experiment Tracking
+
+This project uses **MLflow** to track all experiment runs.
+
+Below is an example of the MLflow UI used in this project:
+
+<p align="center">
+  <img src="docs/mlflow/mlflow_ui.png" alt="MLflow UI" width="700">
+</p>
+
+
+
+
 # 📊 Model Performance
 
 | Model      | RMSE | MAE |
